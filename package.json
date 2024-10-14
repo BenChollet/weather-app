@@ -1,0 +1,20 @@
+{
+  "name": "weather-app",
+  "version": "1.0.0",
+  "description": "Basic weather app for Blank",
+  "main": "index.js",
+  "scripts": {
+    "deploy-lambda": "tsc && zip -r weatherHandler.zip dist/ node_modules/ && aws s3 cp weatherHandler.zip s3://weatherlambda/weatherHandler.zip",
+  },
+  "author": "Benjamin Chollet",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.1691.0",
+    "axios": "^1.7.7"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.7.5",
+    "typescript": "^5.6.3"
+  }
+}

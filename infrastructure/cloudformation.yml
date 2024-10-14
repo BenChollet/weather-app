@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  OpenWeatherApiKey:
+    Type: String
+    Description: OpenWeather API Key
+  DynamoDBTableName:
+    Type: String
+    Description: DynamoDB Table Name
+  S3BucketName:
+    Type: String
+    Description: S3 Bucket Name
+  S3Key:
+    Type: String
+    Description: S3 Key
+
+Resources:
+  WeatherDataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DynamoDBTableName
+      AttributeDefinitions:
+        - AttributeName: city
+          AttributeType: S
+      KeySchema:
+        - AttributeName: city
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  WeatherLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: GetWeatherFunction
+      Handler: dist/lambdas/weatherHandler.handler
+      Runtime: nodejs20.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          OPEN_WEATHER_API_KEY: !Ref OpenWeatherApiKey
+      Code:
+        S3Bucket: !Ref S3BucketName
+        S3Key: !Ref S3Key
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaDynamoDBPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource: !GetAtt WeatherDataTable.Arn
+
+  LambdaApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WeatherLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/weather
+
+  ApiGatewayRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: WeatherApi
+
+  ApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: weather
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref ApiGatewayResource
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WeatherLambdaFunction.Arn}/invocations
+
+  ApiGatewayDeploymentDev:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      StageName: development
+    DependsOn:
+      - ApiGatewayMethod
